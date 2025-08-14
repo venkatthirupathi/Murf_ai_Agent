@@ -40,8 +40,7 @@ Task day 12 completed UI:
 ## ⚙️ Getting Started
 
 ### 1. **Clone the repository**
-       git clone  https://github.com/venkatthirupathi/Murf_ai_project.git
-
+       git clone  https://github.com/venkatthirupathi/Murf_ai.git
 
 ### 2. **Install dependencies**
        pip install -r requirements.txt   (or)  pip install fastapi uvicorn requests python-dotenv python-multipart assemblyai google-generativeai
