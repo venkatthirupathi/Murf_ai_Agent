@@ -37,8 +37,8 @@ Task day 12 completed UI:
 
 ### 1. **Clone the repository**
 ```bash
-git clone https://github.com/venkatthirupathi/Murf_ai_project.git
-cd Murf_ai_project
+git clone https://github.com/venkatthirupathi/Murf_ai.git
+cd Murf_ai
 ```
 
 ### 2. **Install dependencies**
