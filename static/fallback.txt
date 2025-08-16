@@ -1,8 +1,15 @@
-This is a placeholder for the fallback.mp3 audio file.
+FALLBACK AUDIO FILE
 
-To create a proper fallback audio file:
-1. Record or generate a short audio message saying "I'm having trouble connecting right now."
-2. Save it as "fallback.mp3" in this directory
-3. Or update the fallback_tts function in services/tts.py to handle the case when Murf API is unavailable
+To create a fallback audio file for when TTS fails:
 
-The fallback audio will play when there are API errors or connection issues.
+1. Record a simple message like "I'm having trouble connecting right now" using any audio recording software
+2. Save it as MP3 format
+3. Rename it to "fallback.mp3" 
+4. Place it in this static/ directory
+
+Or use online TTS services like:
+- Google Translate TTS
+- Microsoft Edge Read Aloud
+- Any text-to-speech converter
+
+The file should be named "fallback.mp3" and placed in the static/ folder.

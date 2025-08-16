@@ -12,14 +12,6 @@ logger = logging.getLogger(__name__)
 
 # Set API key for AssemblyAI
 ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
-if not ASSEMBLYAI_API_KEY:
-    logger.error("ASSEMBLYAI_API_KEY not found in environment variables")
-    raise Exception("ASSEMBLYAI_API_KEY not found in environment variables")
-
-aai.settings.api_key = ASSEMBLYAI_API_KEY
-
-# Create a transcriber instance
-transcriber = aai.Transcriber()
 
 def transcribe_audio(audio_bytes: bytes) -> str:
     """Transcribe raw audio bytes by writing to a temp file first.
@@ -29,8 +21,16 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         logger.error("Empty audio bytes received")
         return ""
     
-    temp_path = None
+    # Check if API key is configured
+    if not ASSEMBLYAI_API_KEY or ASSEMBLYAI_API_KEY == "your_assemblyai_api_key_here":
+        logger.error("ASSEMBLYAI_API_KEY not configured or using placeholder")
+        return "API key not configured. Please add your AssemblyAI API key to the .env file."
+    
     try:
+        # Configure AssemblyAI
+        aai.settings.api_key = ASSEMBLYAI_API_KEY
+        transcriber = aai.Transcriber()
+        
         # Save bytes to a temporary file; frontend records webm
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
             tmp.write(audio_bytes)
@@ -46,13 +46,23 @@ def transcribe_audio(audio_bytes: bytes) -> str:
             return transcript.text
         else:
             logger.warning("Transcription returned no text")
-            return ""
+            return "Speech could not be understood. Please try speaking more clearly."
             
+    except aai.APIError as e:
+        if "401" in str(e):
+            logger.error("AssemblyAI API key invalid or expired")
+            return "API key error. Please check your AssemblyAI API key."
+        elif "429" in str(e):
+            logger.error("AssemblyAI rate limit exceeded")
+            return "Rate limit exceeded. Please try again later."
+        else:
+            logger.error(f"AssemblyAI API error: {e}")
+            return f"Transcription error: {str(e)}"
     except Exception as e:
         logger.error(f"Transcription error: {e}")
-        return ""
+        return f"Transcription failed: {str(e)}"
     finally:
-        if temp_path and os.path.exists(temp_path):
+        if 'temp_path' in locals() and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
                 logger.debug(f"Temp file removed: {temp_path}")

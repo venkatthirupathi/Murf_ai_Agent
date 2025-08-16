@@ -2,24 +2,52 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>AI Voice Agent</title>
+  <title>AI Voice Agent - Streaming</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="container">
-    <h1>AI Voice Agent</h1>
-    <div id="chat-history"></div>
+    <h1>🎤 AI Voice Agent</h1>
+    <p class="subtitle">Streaming AI Conversations with Voice</p>
+    
+    <!-- Conversation History -->
+    <div id="chat-history" class="chat-history">
+      <div class="welcome-message">
+        <p>👋 Welcome! Click the microphone to start talking with your AI assistant.</p>
+        <p>Your conversation will appear here in real-time.</p>
+      </div>
+    </div>
 
-    <!-- Single toggle record button -->
-    <button id="record-btn">
-      <span id="mic-icon">🎤</span>
-      <span id="record-text">Start Recording</span>
-    </button>
+    <!-- Recording Controls -->
+    <div class="recording-controls">
+      <button id="record-btn" class="record-button">
+        <span id="mic-icon">🎤</span>
+        <span id="record-text">Start Recording</span>
+      </button>
+      
+      <button id="clear-btn" class="clear-button" title="Clear conversation">
+        🗑️ Clear
+      </button>
+    </div>
+
+    <!-- Status and Streaming Indicators -->
+    <div id="status-text" class="status-text"></div>
+    
+    <!-- Streaming Response Display -->
+    <div id="streaming-response" class="streaming-response" style="display: none;">
+      <div class="streaming-indicator">
+        <span class="pulse">●</span> AI is thinking...
+      </div>
+      <div id="response-text" class="response-text"></div>
+    </div>
 
     <!-- Hidden audio player (auto‑plays responses) -->
     <audio id="echo-audio" style="display:none;"></audio>
-
-    <div id="status-text" class="helper-text"></div>
+    
+    <!-- Connection Status -->
+    <div id="connection-status" class="connection-status">
+      <span id="ws-status" class="ws-status">🔴 WebSocket: Disconnected</span>
+    </div>
   </div>
 
   <script src="/static/script.js"></script>
