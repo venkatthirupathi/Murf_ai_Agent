@@ -1,60 +1,266 @@
-body {
-  font-family: 'Segoe UI', sans-serif;
-  background: #2c3e50;
-  color: #ecf0f1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
+* {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  color: #333;
 }
 
 .container {
-  background-color: #34495e;
-  padding: 30px;
-  border-radius: 20px;
-  text-align: center;
-  max-width: 400px;
-  width: 100%;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
 }
 
 h1 {
-  margin-bottom: 20px;
-  color: #1abc9c;
+  text-align: center;
+  color: white;
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
 }
 
-#record-btn {
-  background: #1abc9c;
+.subtitle {
+  text-align: center;
+  color: rgba(255,255,255,0.9);
+  font-size: 1.1rem;
+  margin-bottom: 30px;
+  font-weight: 300;
+}
+
+/* Chat History */
+.chat-history {
+  background: white;
+  border-radius: 15px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.welcome-message {
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.welcome-message p {
+  margin: 5px 0;
+}
+
+.chat-message {
+  margin: 15px 0;
+  padding: 15px;
+  border-radius: 10px;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.chat-message.user {
+  background: #e3f2fd;
+  border-left: 4px solid #2196f3;
+  margin-left: 20px;
+}
+
+.chat-message.ai {
+  background: #f3e5f5;
+  border-left: 4px solid #9c27b0;
+  margin-right: 20px;
+}
+
+.chat-message .role {
+  font-weight: bold;
+  font-size: 0.9rem;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chat-message.user .role {
+  color: #1976d2;
+}
+
+.chat-message.ai .role {
+  color: #7b1fa2;
+}
+
+.chat-message .content {
+  line-height: 1.5;
+}
+
+/* Recording Controls */
+.recording-controls {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.record-button {
+  background: linear-gradient(45deg, #ff6b6b, #ee5a24);
   color: white;
   border: none;
   padding: 15px 30px;
-  font-size: 18px;
-  font-weight: bold;
   border-radius: 50px;
+  font-size: 1.1rem;
   cursor: pointer;
-  transition: background 0.3s ease, transform 0.2s ease;
+  transition: all 0.3s ease;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+  justify-content: center;
 }
 
-#record-btn:hover {
-  background: #16a085;
+.record-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.3);
 }
 
-#record-btn.recording {
-  background: red;
-  animation: pulse 1s infinite;
+.record-button.recording {
+  background: linear-gradient(45deg, #ff4757, #c44569);
+  animation: pulse 1.5s infinite;
+}
+
+.clear-button {
+  background: #95a5a6;
+  color: white;
+  border: none;
+  padding: 15px 20px;
+  border-radius: 50px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+
+.clear-button:hover {
+  background: #7f8c8d;
+  transform: translateY(-1px);
+}
+
+/* Status Text */
+.status-text {
+  text-align: center;
+  margin: 20px 0;
+  padding: 15px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.9);
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+/* Streaming Response */
+.streaming-response {
+  background: white;
+  border-radius: 15px;
+  padding: 20px;
+  margin: 20px 0;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+  animation: slideUp 0.3s ease-out;
+}
+
+.streaming-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #9c27b0;
+  font-weight: 500;
+  margin-bottom: 15px;
+}
+
+.pulse {
+  color: #9c27b0;
+  animation: pulse 1.5s infinite;
+}
+
+.response-text {
+  line-height: 1.6;
+  color: #333;
+  font-size: 1rem;
+}
+
+/* Connection Status */
+.connection-status {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.ws-status {
+  background: rgba(255,255,255,0.9);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.ws-status.connected {
+  background: #d4edda;
+  color: #155724;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7); }
-  70% { box-shadow: 0 0 0 15px rgba(255,0,0,0); }
-  100% { box-shadow: 0 0 0 0 rgba(255,0,0,0); }
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
 }
 
-.helper-text {
-  font-size: 14px;
-  margin-top: 15px;
-  font-style: italic;
-  color: #bdc3c7;
+/* Responsive Design */
+@media (max-width: 768px) {
+  .container {
+    padding: 15px;
+  }
+  
+  h1 {
+    font-size: 2rem;
+  }
+  
+  .recording-controls {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .record-button {
+    min-width: 180px;
+  }
+  
+  .chat-history {
+    max-height: 300px;
+  }
+}
+
+/* Scrollbar Styling */
+.chat-history::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-history::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.chat-history::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.chat-history::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }

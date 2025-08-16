@@ -1,0 +1,26 @@
+FALLBACK AUDIO FILE INSTRUCTIONS
+
+To fix the "Failed to generate audio" error, you need to create a fallback.mp3 file:
+
+1. **Record Audio:**
+   - Use your phone or computer to record: "I'm having trouble connecting right now"
+   - Save as MP3 format
+
+2. **Or Use Online TTS:**
+   - Go to https://translate.google.com
+   - Type: "I'm having trouble connecting right now"
+   - Click the speaker icon to play
+   - Use screen recording software to capture the audio
+   - Save as MP3
+
+3. **Place the file:**
+   - Rename it to "fallback.mp3"
+   - Put it in this static/ folder
+   - The app will use it when TTS fails
+
+4. **Alternative:**
+   - Use any text-to-speech service
+   - Generate the same message
+   - Save as MP3
+
+This will fix the audio generation errors!
