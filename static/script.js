@@ -19,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioChunks = [];
     let websocket = null;
     let isStreaming = false;
+    let streamInterval = null; // For streaming audio data
+    let audioStream = null; // MediaStream for continuous access
 
     // DOM elements
     const recordBtn = document.getElementById('record-btn');
@@ -42,6 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     clearBtn.addEventListener('click', clearConversation);
+    
+    // Add event listener for check files button
+    const checkFilesBtn = document.getElementById('check-files-btn');
+    checkFilesBtn.addEventListener('click', checkRecordedFiles);
 
     // Auto-start recording after AI finishes reply
     echoAudio.onended = () => {
@@ -78,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             websocket.onopen = () => {
                 console.log('WebSocket connected');
-                wsStatus.textContent = '🟢 WebSocket: Connected';
+                wsStatus.textContent = '🟢 WebSocket: Connected - Ready for Audio Streaming';
                 wsStatus.className = 'ws-status connected';
             };
             
@@ -110,6 +116,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('WebSocket message:', data);
             
             switch (data.type) {
+                case 'ready':
+                    updateStatus("Connected and ready to stream audio", 'success');
+                    break;
+                    
+                case 'audio_received':
+                    // Audio chunk was successfully received and saved
+                    console.log(`Server received audio: ${data.bytes_received} bytes, total: ${data.total_file_size} bytes`);
+                    break;
+                    
                 case 'transcript':
                     addMessageToHistory('user', data.content);
                     break;
@@ -149,9 +164,18 @@ document.addEventListener('DOMContentLoaded', () => {
         audioChunks = [];
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream = stream; // Store stream for continuous access
+            
             mediaRecorder = new MediaRecorder(stream, {
                 mimeType: 'audio/webm;codecs=opus'
             });
+
+            // Set up streaming interval - send audio data every 100ms
+            streamInterval = setInterval(() => {
+                if (isRecording && websocket && websocket.readyState === WebSocket.OPEN) {
+                    streamAudioChunk();
+                }
+            }, 100);
 
             mediaRecorder.ondataavailable = event => {
                 if (event.data.size > 0) {
@@ -160,14 +184,29 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             mediaRecorder.onstop = () => {
-                sendAudioToWebSocket();
+                // Stop streaming interval
+                if (streamInterval) {
+                    clearInterval(streamInterval);
+                    streamInterval = null;
+                }
+                
+                // Send final audio chunk if any
+                if (audioChunks.length > 0) {
+                    sendFinalAudioChunk();
+                }
+                
+                // Stop all tracks
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
             };
 
             mediaRecorder.start();
             isRecording = true;
             recordText.textContent = "Stop Recording";
             recordBtn.classList.add("recording");
-            updateStatus("Listening...", 'listening');
+            updateStatus("Listening and streaming...", 'listening');
         } catch (err) {
             console.error('Microphone access error:', err);
             updateStatus("Microphone access denied or unavailable.", 'error');
@@ -178,10 +217,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function stopRecording() {
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             mediaRecorder.stop();
-            if (mediaRecorder.stream) {
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            }
         }
+        
+        // Stop streaming interval
+        if (streamInterval) {
+            clearInterval(streamInterval);
+            streamInterval = null;
+        }
+        
+        // Stop all tracks
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
+        }
+        
         isRecording = false;
         recordText.textContent = "Start Recording";
         recordBtn.classList.remove("recording");
@@ -203,6 +252,40 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             // Fallback to HTTP endpoint if WebSocket is not available
             sendAudioViaHTTP();
+        }
+    }
+
+    // Stream audio chunk to server
+    function streamAudioChunk() {
+        if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        
+        // Create a small audio chunk from the current recording
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            // Request data to be available
+            mediaRecorder.requestData();
+        }
+        
+        // Send any available chunks
+        if (audioChunks.length > 0) {
+            const chunk = audioChunks.shift(); // Remove and send the chunk
+            websocket.send(chunk);
+            console.log(`Streamed audio chunk: ${chunk.size} bytes`);
+        }
+    }
+
+    // Send final audio chunk when recording stops
+    function sendFinalAudioChunk() {
+        if (audioChunks.length === 0) {
+            return;
+        }
+        
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const finalChunk = new Blob(audioChunks, { type: 'audio/webm' });
+            websocket.send(finalChunk);
+            console.log(`Final audio chunk sent: ${finalChunk.size} bytes`);
+            audioChunks = []; // Clear chunks
         }
     }
 
@@ -331,7 +414,21 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const roleSpan = document.createElement('div');
         roleSpan.className = 'role';
-        roleSpan.textContent = role === 'user' ? 'You' : 'AI Assistant';
+        
+        // Set role text based on message type
+        switch (role) {
+            case 'user':
+                roleSpan.textContent = 'You';
+                break;
+            case 'ai':
+                roleSpan.textContent = 'AI Assistant';
+                break;
+            case 'system':
+                roleSpan.textContent = 'System Info';
+                break;
+            default:
+                roleSpan.textContent = role;
+        }
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
@@ -359,7 +456,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const history = JSON.parse(saved);
                 history.forEach(msg => {
-                    addMessageToHistory(msg.role, msg.content);
+                    if (msg.role === 'system' || msg.role === 'user' || msg.role === 'ai') {
+                        addMessageToHistory(msg.role, msg.content);
+                    }
                 });
             } catch (e) {
                 console.error('Error loading conversation history:', e);
@@ -368,10 +467,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveConversationToStorage() {
-        const messages = Array.from(chatHistory.querySelectorAll('.chat-message')).map(msg => ({
-            role: msg.classList.contains('user') ? 'user' : 'ai',
-            content: msg.querySelector('.content').textContent
-        }));
+        const messages = Array.from(chatHistory.querySelectorAll('.chat-message')).map(msg => {
+            let role = 'ai';
+            if (msg.classList.contains('user')) {
+                role = 'user';
+            } else if (msg.classList.contains('system')) {
+                role = 'system';
+            }
+            return {
+                role: role,
+                content: msg.querySelector('.content').textContent
+            };
+        });
         sessionStorage.setItem(`conversation_${sessionId}`, JSON.stringify(messages));
     }
 
@@ -379,8 +486,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (confirm('Are you sure you want to clear the conversation?')) {
             chatHistory.innerHTML = `
                 <div class="welcome-message">
-                    <p>👋 Welcome! Click the microphone to start talking with your AI assistant.</p>
-                    <p>Your conversation will appear here in real-time.</p>
+                    <p>👋 Welcome! Click the microphone to start streaming audio to the server.</p>
+                    <p>Your audio will be recorded and saved in real-time via WebSocket connection.</p>
                 </div>
             `;
             sessionStorage.removeItem(`conversation_${sessionId}`);
@@ -416,5 +523,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize status
-    updateStatus("Click the microphone to start recording", 'info');
+    updateStatus("Click the microphone to start streaming audio", 'info');
+
+    // Check recorded audio files
+    async function checkRecordedFiles() {
+        try {
+            const response = await fetch(`/recorded-audio/${sessionId}`);
+            const data = await response.json();
+            
+            if (data.error) {
+                updateStatus(`Error checking files: ${data.error}`, 'error');
+                return;
+            }
+            
+            if (data.files.length === 0) {
+                updateStatus("No audio files recorded yet. Start recording to create files.", 'info');
+                return;
+            }
+            
+            // Display file information
+            let fileInfo = `📁 Recorded Audio Files (${data.total_files}):\n`;
+            data.files.forEach(file => {
+                fileInfo += `• ${file.filename} - ${file.size_mb} MB\n`;
+            });
+            
+            // Add to chat history
+            addMessageToHistory('system', fileInfo);
+            updateStatus(`Found ${data.total_files} audio file(s)`, 'success');
+            
+        } catch (error) {
+            console.error('Error checking recorded files:', error);
+            updateStatus("Error checking recorded files", 'error');
+        }
+    }
 });

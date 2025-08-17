@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import time
 from typing import AsyncGenerator
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Path, WebSocket, WebSocketDisconnect
@@ -265,7 +266,25 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     WEBSOCKET_CONNECTIONS[session_id] = websocket
     
+    # Create session-specific upload directory
+    session_upload_dir = os.path.join(UPLOAD_DIRECTORY, f"session_{session_id}")
+    os.makedirs(session_upload_dir, exist_ok=True)
+    
+    # File to save streaming audio data
+    audio_file_path = os.path.join(session_upload_dir, f"streaming_audio_{int(time.time())}.webm")
+    audio_file = None
+    
     try:
+        # Open file for writing binary audio data
+        audio_file = open(audio_file_path, 'wb')
+        logger.info(f"Started streaming audio recording to: {audio_file_path}")
+        
+        # Send confirmation that we're ready to receive audio
+        await websocket.send_text(json.dumps({
+            "type": "ready",
+            "message": "Ready to receive streaming audio"
+        }))
+        
         while True:
             # Wait for audio data from client
             data = await websocket.receive_bytes()
@@ -274,67 +293,40 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 continue
                 
             try:
-                # Transcribe audio
-                user_text = transcribe_audio(data)
-                if not user_text:
-                    await websocket.send_text(json.dumps({
-                        "type": "error", 
-                        "message": "Speech could not be understood. Please try speaking more clearly."
-                    }))
-                    continue
+                # Save the audio data to file
+                audio_file.write(data)
+                audio_file.flush()  # Ensure data is written immediately
                 
-                # Update session history
-                history = CHAT_SESSIONS.get(session_id, [])
-                history.append({"role": "user", "content": user_text})
-                
-                # Send user transcript
+                # Send confirmation that audio chunk was received
                 await websocket.send_text(json.dumps({
-                    "type": "transcript",
-                    "content": user_text
+                    "type": "audio_received",
+                    "bytes_received": len(data),
+                    "total_file_size": audio_file.tell()
                 }))
                 
-                # Stream LLM response
-                llm_text = ""
-                async for chunk in generate_streaming_response(history):
-                    if chunk.strip():
-                        llm_text += chunk
-                        await websocket.send_text(json.dumps({
-                            "type": "llm_chunk",
-                            "content": chunk
-                        }))
-                
-                # Generate TTS
-                if llm_text:
-                    try:
-                        audio_url = murf_tts(llm_text)
-                        if audio_url:
-                            await websocket.send_text(json.dumps({
-                                "type": "audio_ready",
-                                "audio_url": audio_url
-                            }))
-                    except Exception as e:
-                        logger.error(f"TTS error in WebSocket: {e}")
-                        await websocket.send_text(json.dumps({
-                            "type": "error",
-                            "message": "Failed to generate audio"
-                        }))
-                
-                # Update session history
-                history.append({"role": "model", "content": llm_text})
-                CHAT_SESSIONS[session_id] = history
-                
-                await websocket.send_text(json.dumps({"type": "complete"}))
+                logger.info(f"Received audio chunk: {len(data)} bytes, total: {audio_file.tell()} bytes")
                 
             except Exception as e:
-                logger.error(f"WebSocket processing error: {e}")
+                logger.error(f"Error saving audio data: {e}")
                 await websocket.send_text(json.dumps({
                     "type": "error",
-                    "message": f"Processing error: {str(e)}"
+                    "message": f"Error saving audio: {str(e)}"
                 }))
                 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session {session_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": f"WebSocket error: {str(e)}"
+        }))
     finally:
+        # Close the audio file
+        if audio_file:
+            audio_file.close()
+            logger.info(f"Finished streaming audio recording: {audio_file_path}")
+        
         if session_id in WEBSOCKET_CONNECTIONS:
             del WEBSOCKET_CONNECTIONS[session_id]
 
@@ -357,6 +349,35 @@ async def clear_conversation(session_id: str):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "message": "AI Voice Agent is running"}
+
+@app.get("/recorded-audio/{session_id}")
+async def list_recorded_audio(session_id: str):
+    """List recorded audio files for a session"""
+    try:
+        session_upload_dir = os.path.join(UPLOAD_DIRECTORY, f"session_{session_id}")
+        if not os.path.exists(session_upload_dir):
+            return {"session_id": session_id, "files": [], "message": "No recordings found for this session"}
+        
+        files = []
+        for filename in os.listdir(session_upload_dir):
+            if filename.endswith('.webm'):
+                file_path = os.path.join(session_upload_dir, filename)
+                file_size = os.path.getsize(file_path)
+                files.append({
+                    "filename": filename,
+                    "size_bytes": file_size,
+                    "size_mb": round(file_size / (1024 * 1024), 2)
+                })
+        
+        return {
+            "session_id": session_id,
+            "files": files,
+            "total_files": len(files),
+            "upload_directory": session_upload_dir
+        }
+    except Exception as e:
+        logger.error(f"Error listing recorded audio: {e}")
+        return {"error": str(e)}
 
 @app.get("/test-transcription")
 async def test_transcription():
