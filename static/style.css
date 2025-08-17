@@ -73,6 +73,14 @@ h1 {
   margin-right: 20px;
 }
 
+.chat-message.system {
+  background: #fff3e0;
+  border-left: 4px solid #ff9800;
+  margin: 15px 0;
+  font-family: 'Courier New', monospace;
+  white-space: pre-line;
+}
+
 .chat-message .role {
   font-weight: bold;
   font-size: 0.9rem;
@@ -142,6 +150,23 @@ h1 {
 
 .clear-button:hover {
   background: #7f8c8d;
+  transform: translateY(-1px);
+}
+
+.check-files-button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 15px 20px;
+  border-radius: 50px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+
+.check-files-button:hover {
+  background: #2980b9;
   transform: translateY(-1px);
 }
 

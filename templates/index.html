@@ -8,13 +8,13 @@
 <body>
   <div class="container">
     <h1>🎤 AI Voice Agent</h1>
-    <p class="subtitle">Streaming AI Conversations with Voice</p>
+    <p class="subtitle">Streaming Audio Recording with WebSockets</p>
     
     <!-- Conversation History -->
     <div id="chat-history" class="chat-history">
       <div class="welcome-message">
-        <p>👋 Welcome! Click the microphone to start talking with your AI assistant.</p>
-        <p>Your conversation will appear here in real-time.</p>
+        <p>👋 Welcome! Click the microphone to start streaming audio to the server.</p>
+        <p>Your audio will be recorded and saved in real-time via WebSocket connection.</p>
       </div>
     </div>
 
@@ -27,6 +27,10 @@
       
       <button id="clear-btn" class="clear-button" title="Clear conversation">
         🗑️ Clear
+      </button>
+      
+      <button id="check-files-btn" class="check-files-button" title="Check recorded audio files">
+        📁 Check Files
       </button>
     </div>
 
