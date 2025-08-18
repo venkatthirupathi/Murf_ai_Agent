@@ -52,4 +52,4 @@ def fallback_tts(text="I'm having trouble connecting right now."):
         logger.error(f"Fallback TTS failed: {e}")
     
     # Return fallback audio file path
-    return "/static/fallback.mp3"
+    return "/fallback.wav"
