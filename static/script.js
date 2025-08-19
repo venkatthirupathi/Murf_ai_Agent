@@ -137,6 +137,50 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     break;
 
+                case 'turn_end':
+                    // User has finished speaking - turn detection triggered
+                    updateStatus("🎤 Turn detected - you finished speaking!", 'success');
+                    console.log(`Turn ended with transcript: ${data.transcript}`);
+                    
+                    // Add a visual indicator that turn was detected
+                    const turnIndicator = document.createElement('div');
+                    turnIndicator.className = 'turn-indicator';
+                    turnIndicator.textContent = '🔄 Turn detected - processing...';
+                    turnIndicator.style.cssText = `
+                        background: #27AE60;
+                        color: white;
+                        padding: 8px 12px;
+                        border-radius: 4px;
+                        margin: 5px 0;
+                        font-size: 14px;
+                        text-align: center;
+                        animation: pulse 1s ease-in-out;
+                    `;
+                    
+                    // Add CSS animation for pulse effect
+                    if (!document.querySelector('#turn-indicator-style')) {
+                        const style = document.createElement('style');
+                        style.id = 'turn-indicator-style';
+                        style.textContent = `
+                            @keyframes pulse {
+                                0% { opacity: 0.7; transform: scale(0.95); }
+                                50% { opacity: 1; transform: scale(1.05); }
+                                100% { opacity: 0.7; transform: scale(0.95); }
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+                    
+                    chatHistory.appendChild(turnIndicator);
+                    
+                    // Remove the indicator after 3 seconds
+                    setTimeout(() => {
+                        if (turnIndicator.parentNode) {
+                            turnIndicator.remove();
+                        }
+                    }, 3000);
+                    break;
+
                 case 'llm_chunk':
                     if (!isStreaming) {
                         startStreamingResponse();

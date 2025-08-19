@@ -343,16 +343,31 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         text = event.transcript or ""
                         if not text:
                             return
+                        
+                        # Check if this is the end of a turn
                         is_final = bool(getattr(event, "end_of_turn", False))
+                        
                         if is_final:
-                            logger.info(f"[AAI Final] {text}")
+                            logger.info(f"[AAI Final Turn] {text}")
+                            # Send final transcript
+                            transcripts_queue.put_nowait(json.dumps({
+                                "type": "transcript",
+                                "final": True,
+                                "content": text
+                            }))
+                            # Send turn end notification
+                            transcripts_queue.put_nowait(json.dumps({
+                                "type": "turn_end",
+                                "transcript": text
+                            }))
                         else:
                             logger.info(f"[AAI Partial] {text}")
-                        transcripts_queue.put_nowait(json.dumps({
-                            "type": "transcript",
-                            "final": is_final,
-                            "content": text
-                        }))
+                            # Send partial transcript
+                            transcripts_queue.put_nowait(json.dumps({
+                                "type": "transcript",
+                                "final": False,
+                                "content": text
+                            }))
                     except Exception as cb_err:
                         logger.error(f"Error handling AAI turn: {cb_err}")
 
@@ -371,11 +386,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 aa_streaming_client.on(StreamingEvents.Termination, on_terminated)
                 aa_streaming_client.on(StreamingEvents.Error, on_error)
 
-                # Connect session
+                # Connect session with turn detection enabled
                 aa_streaming_client.connect(
                     StreamingParameters(
                         sample_rate=16000,
-                        format_turns=False,
+                        format_turns=True,  # Enable turn detection
                     )
                 )
 
