@@ -302,6 +302,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     audio_input_queue = Queue()
     transcriber = None
     aa_streaming_client = None
+    transcripts_forwarder_task = None
+    llm_stream_task = None
     aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
     if not aai.settings.api_key:
         logger.warning("ASSEMBLYAI_API_KEY missing - realtime transcription disabled for this session")
@@ -409,6 +411,112 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 loop = asyncio.get_event_loop()
                 _ = loop.run_in_executor(None, lambda: aa_streaming_client.stream(pcm_generator()))
                 logger.info("Connected to AssemblyAI Realtime API (universal streaming)")
+
+                # Helper to stream LLM response after final transcript
+                async def stream_llm_from_transcript(final_text: str):
+                    nonlocal llm_stream_task
+                    try:
+                        # Update history with user's final transcript
+                        history = CHAT_SESSIONS.get(session_id, [])
+                        history.append({"role": "user", "content": final_text})
+                        CHAT_SESSIONS[session_id] = history
+
+                        # Stream LLM chunks back to client
+                        accumulated_text = ""
+                        async for chunk in generate_streaming_response(history):
+                            if chunk and chunk.strip():
+                                accumulated_text += chunk
+                                try:
+                                    await websocket.send_text(json.dumps({
+                                        "type": "llm_chunk",
+                                        "content": chunk
+                                    }))
+                                except Exception as send_err:
+                                    logger.error(f"Failed to send llm_chunk over WebSocket: {send_err}")
+                                    break
+
+                        if accumulated_text:
+                            logger.info(f"LLM streamed response: {accumulated_text}")
+
+                            # Generate TTS for the full response
+                            try:
+                                audio_url = murf_tts(accumulated_text)
+                                if audio_url:
+                                    await websocket.send_text(json.dumps({
+                                        "type": "audio_ready",
+                                        "audio_url": audio_url
+                                    }))
+                                else:
+                                    await websocket.send_text(json.dumps({
+                                        "type": "error",
+                                        "message": "Failed to generate audio"
+                                    }))
+                            except Exception as tts_err:
+                                logger.error(f"TTS error (streaming): {tts_err}")
+                                try:
+                                    await websocket.send_text(json.dumps({
+                                        "type": "error",
+                                        "message": "Failed to generate audio"
+                                    }))
+                                except Exception:
+                                    pass
+
+                            # Update history with model response
+                            history.append({"role": "model", "content": accumulated_text})
+                            CHAT_SESSIONS[session_id] = history
+
+                        try:
+                            await websocket.send_text(json.dumps({"type": "complete"}))
+                        except Exception:
+                            pass
+                    except Exception as llm_err:
+                        logger.error(f"Streaming LLM error: {llm_err}")
+                        try:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": str(llm_err)
+                            }))
+                        except Exception:
+                            pass
+
+                # Background task to forward transcripts and trigger LLM when turn ends
+                async def forward_and_handle_transcripts():
+                    nonlocal llm_stream_task
+                    try:
+                        while True:
+                            drained_any = False
+                            try:
+                                while True:
+                                    pending = transcripts_queue.get_nowait()
+                                    drained_any = True
+                                    # Forward to client
+                                    try:
+                                        await websocket.send_text(pending)
+                                    except Exception as send_err:
+                                        logger.error(f"Failed to forward transcript: {send_err}")
+                                        break
+
+                                    # Handle turn_end to trigger LLM streaming
+                                    try:
+                                        payload = json.loads(pending)
+                                        if payload.get("type") == "turn_end":
+                                            final_text = payload.get("transcript", "")
+                                            if final_text:
+                                                # Avoid overlapping LLM tasks
+                                                if llm_stream_task is None or llm_stream_task.done():
+                                                    llm_stream_task = asyncio.create_task(stream_llm_from_transcript(final_text))
+                                    except Exception:
+                                        pass
+                            except Empty:
+                                pass
+                            # Yield control and avoid tight loop
+                            await asyncio.sleep(0.05 if not drained_any else 0)
+                    except asyncio.CancelledError:
+                        return
+                    except Exception as fwd_err:
+                        logger.error(f"Transcript forwarder error: {fwd_err}")
+
+                transcripts_forwarder_task = asyncio.create_task(forward_and_handle_transcripts())
             except Exception as conn_err:
                 logger.error(f"Failed to initialize AssemblyAI streaming: {conn_err}")
                 aa_streaming_client = None
@@ -419,13 +527,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             if 'bytes' in message and message['bytes'] is not None:
                 data = message['bytes']
                 if len(data) == 0:
-                    # Drain any pending transcripts even if no data
-                    try:
-                        while True:
-                            pending = transcripts_queue.get_nowait()
-                            await websocket.send_text(pending)
-                    except Empty:
-                        pass
+                    # Background forwarder handles transcript flushing
                     continue
 
                 try:
@@ -444,13 +546,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         "total_file_size": audio_file.tell()
                     }))
 
-                    # Drain and forward any pending transcripts
-                    try:
-                        while True:
-                            pending = transcripts_queue.get_nowait()
-                            await websocket.send_text(pending)
-                    except Empty:
-                        pass
+                    # Background forwarder handles transcript flushing
 
                     logger.info(f"Received audio chunk: {len(data)} bytes, total: {audio_file.tell()} bytes")
 
@@ -483,6 +579,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         if audio_file:
             audio_file.close()
             logger.info(f"Finished streaming audio recording: {audio_file_path}")
+        # Cancel transcripts forwarder
+        try:
+            if transcripts_forwarder_task is not None:
+                transcripts_forwarder_task.cancel()
+        except Exception:
+            pass
+        # Cancel any running LLM task
+        try:
+            if llm_stream_task is not None and not llm_stream_task.done():
+                llm_stream_task.cancel()
+        except Exception:
+            pass
         # Close realtime transcriber
         try:
             if aa_streaming_client is not None:
