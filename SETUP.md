@@ -4,15 +4,11 @@
 
 Create a `.env` file in the project root with the following variables:
 
-```bash
-# Murf AI API Key for Text-to-Speech
-MURF_API_KEY=your_murf_api_key_here
+# Murf AI Voice Agent - Environment Variables
+MURF_API_KEY=ap2_7da475a6-3c2d-4219-83ae-9b675bbe26ef
+ASSEMBLYAI_API_KEY=b410a736cee549099f291d618ae2a4cd
+GEMINI_API_KEY=AIzaSyBbpR1aXfO2SAecOrIuztyUflKfyQldYQQ
 
-# AssemblyAI API Key for Speech-to-Text
-ASSEMBLYAI_API_KEY=your_assemblyai_api_key_here
-
-# Google Gemini API Key for LLM responses
-GEMINI_API_KEY=your_gemini_api_key_here
 
 # Optional: Set to "development" for debug logging
 ENVIRONMENT=development

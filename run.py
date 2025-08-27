@@ -24,9 +24,9 @@ def main():
         print("\nContinuing anyway... (some features may not work)")
     
     # Start the server
-    print("🚀 Starting AI Voice Agent...")
-    print("📱 Open http://localhost:8000 in your browser")
-    print("🛑 Press Ctrl+C to stop the server")
+    print("Starting AI Voice Agent...")
+    print("Open http://localhost:8000 in your browser")
+    print("Press Ctrl+C to stop the server")
     
     uvicorn.run(
         "app:app",

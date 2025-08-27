@@ -8,18 +8,42 @@ from queue import Queue, Empty
 import assemblyai as aai
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Path, WebSocket, WebSocketDisconnect
+from services.web_search import perform_web_search, get_news, get_weather
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from schemas.audio import SpeechRequest, SpeechResponse
 from schemas.chat import ChatResponse, StreamingChatResponse
+import orjson
 
-from services.tts import murf_tts, fallback_tts
+from services.tts import murf_tts, fallback_tts, MurfWsTTSStreamer
 from services.stt import transcribe_audio
 from services.llm import generate_llm_response, generate_streaming_response
+from custom_json import custom_json_dumps
 
 load_dotenv()
 
+# Add to your FastAPI backend file (e.g., main.py)
+import os
+import requests
+from fastapi import FastAPI, Request
+from dotenv import load_dotenv
+
+load_dotenv()
+app = FastAPI()
+
+
+
+@app.post("/agent/skill/search")
+async def agent_skill_search(request: Request):
+    data = await request.json()
+    query = data.get("query")
+    api_key = os.getenv("TAVILY_API_KEY")
+    url = "https://api.tavily.com/search"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    params = {"query": query, "max_results": 3}
+    response = requests.get(url, headers=headers, params=params)
+    return response.json()
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -137,8 +161,11 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
     history = CHAT_SESSIONS.get(session_id, [])
     history.append({"role": "user", "content": user_text})
 
+    # Get persona from session or use default
+    persona = CHAT_SESSIONS.get(f"{session_id}_persona", "default")
+
     try:
-        llm_text = generate_llm_response(history)
+        llm_text = generate_llm_response(history, persona)
         if not llm_text:
             raise Exception("Empty response from LLM")
         
@@ -153,7 +180,7 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
                 logger.error(f"Fallback TTS failed: {fallback_err}")
                 return ChatResponse(audio_urls=["/fallback.wav"], transcript=user_text, llm_response=fallback_text, error=llm_text)
         
-        logger.info(f"LLM response generated: '{llm_text[:100]}...'")
+        logger.info(f"LLM response generated: '{llm_text[:100]}...'" )
     except Exception as e:
         logger.error(f"LLM API error: {e}")
         fallback_text = "I'm having trouble thinking of a response right now."
@@ -212,7 +239,7 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
         except Exception:
             audio_urls = ["/fallback.wav"]
 
-    logger.info(f"Chat response complete. Audio URLs: {len(audio_urls)}, Transcript: '{user_text}', LLM: '{llm_text[:100]}...'")
+    logger.info(f"Chat response complete. Audio URLs: {len(audio_urls)}, Transcript: '{user_text}', LLM: '{llm_text[:100]}...'" )
     return ChatResponse(audio_urls=audio_urls, transcript=user_text, llm_response=llm_text)
 
 # NEW: Streaming chat endpoint
@@ -249,16 +276,34 @@ async def agent_chat_stream(session_id: str = Path(...), file: UploadFile = File
     history = CHAT_SESSIONS.get(session_id, [])
     history.append({"role": "user", "content": user_text})
 
+    # Get persona from session or use default
+    persona = CHAT_SESSIONS.get(f"{session_id}_persona", "default")
+
     async def generate_stream():
         try:
             # Stream LLM response
             llm_accum = ""
-            async for chunk in generate_streaming_response(history):
-                if chunk.strip():
-                    llm_accum += chunk
-                    yield json.dumps({"type": "llm_chunk", "content": chunk}) + "\n"
-            
-            # Generate TTS for the complete response
+            streamer = MurfWsTTSStreamer()
+
+            # Connect to Murf WS once with static context_id; receiver prints base64
+            await streamer.connect()
+            try:
+                async for chunk in generate_streaming_response(history, persona):
+                    if chunk.strip():
+                        llm_accum += chunk
+                        # forward chunk to client UI
+                        yield json.dumps({"type": "llm_chunk", "content": chunk}) + "\n"
+                        # forward chunk to Murf WS
+                        try:
+                            await streamer.send_text_chunk(chunk)
+                        except Exception as ws_err:
+                            logger.error(f"Error sending chunk to Murf WS: {ws_err}")
+                # signal end of input to Murf
+                await streamer.finish()
+            finally:
+                await streamer.close()
+
+            # Generate TTS for the complete response (preserve previous behavior/UI)
             llm_text = llm_accum
             if llm_text:
                 try:
@@ -421,19 +466,38 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         history.append({"role": "user", "content": final_text})
                         CHAT_SESSIONS[session_id] = history
 
+                        # Get persona from session or use default
+                        persona = CHAT_SESSIONS.get(f"{session_id}_persona", "default")
+                        logger.info(f"Streaming LLM response with persona: {persona}")
+
                         # Stream LLM chunks back to client
                         accumulated_text = ""
-                        async for chunk in generate_streaming_response(history):
-                            if chunk and chunk.strip():
-                                accumulated_text += chunk
-                                try:
-                                    await websocket.send_text(json.dumps({
-                                        "type": "llm_chunk",
-                                        "content": chunk
-                                    }))
-                                except Exception as send_err:
-                                    logger.error(f"Failed to send llm_chunk over WebSocket: {send_err}")
-                                    break
+                        # Create Murf WS streamer to stream chunks as they arrive
+                        ws_streamer = MurfWsTTSStreamer(websocket=websocket)
+                        await ws_streamer.connect()
+                        try:
+                            async for chunk in generate_streaming_response(history, persona):
+                                if chunk and chunk.strip():
+                                    accumulated_text += chunk
+                                    try:
+                                        await websocket.send_text(json.dumps({
+                                            "type": "llm_chunk",
+                                            "content": chunk
+                                        }))
+                                    except Exception as send_err:
+                                        logger.error(f"Failed to send llm_chunk over WebSocket: {send_err}")
+                                        break
+                                    # Also forward chunk to Murf WS; base64 audio gets printed to console
+                                    try:
+                                        await ws_streamer.send_text_chunk(chunk)
+                                    except Exception as ws_err:
+                                        logger.error(f"Error sending chunk to Murf WS: {ws_err}")
+                        finally:
+                            # Signal end to Murf WS
+                            try:
+                                await ws_streamer.finish()
+                            finally:
+                                await ws_streamer.close()
 
                         if accumulated_text:
                             logger.info(f"LLM streamed response: {accumulated_text}")
@@ -624,6 +688,33 @@ async def clear_conversation(session_id: str):
         del CHAT_SESSIONS[session_id]
     return {"message": "Conversation cleared"}
 
+# NEW: Set persona for session
+@app.post("/persona/{session_id}/{persona_name}")
+async def set_persona(session_id: str, persona_name: str):
+    """Set persona for a session"""
+    valid_personas = ["default", "pirate", "robot", "cowboy"]
+    if persona_name not in valid_personas:
+        raise HTTPException(status_code=400, detail=f"Invalid persona. Valid options: {valid_personas}")
+    
+    CHAT_SESSIONS[f"{session_id}_persona"] = persona_name
+    logger.info(f"Persona for session {session_id} set to {persona_name}")
+    return JSONResponse(content={"message": f"Persona set to {persona_name}", "persona": persona_name})
+
+# NEW: Get current persona for session
+@app.get("/persona/{session_id}")
+async def get_persona(session_id: str):
+    """Get current persona for a session"""
+    persona = CHAT_SESSIONS.get(f"{session_id}_persona", "default")
+    return JSONResponse(content={"session_id": session_id, "persona": persona})
+
+# Test endpoint to check JSON formatting
+@app.get("/test-json")
+async def test_json():
+    """Test endpoint to check JSON formatting"""
+    # Use orjson for proper JSON formatting
+    json_response = orjson.dumps({"test": "value", "another": "field"})
+    return Response(content=json_response, media_type="application/json")
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -664,25 +755,95 @@ async def test_transcription():
     try:
         # Test if AssemblyAI is configured
         from services.stt import ASSEMBLYAI_API_KEY
-        if not ASSEMBLYAI_API_KEY:
-            return {"status": "error", "message": "AssemblyAI API key not configured"}
+        assemblyai_configured = bool(ASSEMBLYAI_API_KEY and ASSEMBLYAI_API_KEY != "your_assemblyai_api_key_here")
         
-        # Test if Murf is configured
-        from services.tts import MURF_API_KEY
-        if not MURF_API_KEY:
-            return {"status": "error", "message": "Murf API key not configured"}
+        # Test if Murf is configured - check environment variable directly
+        murf_api_key = os.getenv("MURF_API_KEY")
+        murf_configured = bool(murf_api_key and murf_api_key != "your_murf_api_key_here")
         
         # Test if Gemini is configured
-        from services.llm import genai
-        if not os.getenv("GEMINI_API_KEY"):
-            return {"status": "error", "message": "Gemini API key not configured"}
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        gemini_configured = bool(gemini_api_key and gemini_api_key != "your_gemini_api_key_here")
         
         return {
             "status": "ok", 
-            "message": "All services configured",
-            "assemblyai": "configured" if ASSEMBLYAI_API_KEY else "missing",
-            "murf": "configured" if MURF_API_KEY else "missing",
-            "gemini": "configured" if os.getenv("GEMINI_API_KEY") else "missing"
+            "message": "Configuration check completed",
+            "assemblyai": "configured" if assemblyai_configured else "missing",
+            "murf": "configured" if murf_configured else "missing",
+            "gemini": "configured" if gemini_configured else "missing"
         }
     except Exception as e:
         return {"status": "error", "message": f"Configuration check failed: {str(e)}"}
+
+# NEW: Web search endpoint
+@app.post("/web-search")
+async def web_search(request: Request):
+    """Endpoint to perform a web search"""
+    try:
+        body = await request.json()
+        query = body.get("query")
+        max_results = body.get("max_results", 3)
+
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter is required")
+
+        results = perform_web_search(query, max_results)
+        if results is None:
+            raise HTTPException(status_code=500, detail="Web search service is unavailable")
+
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Web search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Web search failed: {str(e)}")
+
+@app.post("/agent/skill/web_search")
+async def agent_skill_web_search(request: Request):
+    """Endpoint to perform a web search as a special skill"""
+    try:
+        body = await request.json()
+        query = body.get("query")
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter is required")
+
+        results = perform_web_search(query)
+        if results is None:
+            raise HTTPException(status_code=500, detail="Web search service is unavailable")
+
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Agent skill web search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent skill web search failed: {str(e)}")
+
+@app.post("/agent/skill/news")
+async def agent_skill_news(request: Request):
+    """Endpoint to get the latest news as a special skill"""
+    try:
+        body = await request.json()
+        topic = body.get("topic", "technology") # Default to technology news
+        
+        results = get_news(topic)
+        if results is None:
+            raise HTTPException(status_code=500, detail="News service is unavailable")
+
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Agent skill news error: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent skill news failed: {str(e)}")
+
+@app.post("/agent/skill/weather")
+async def agent_skill_weather(request: Request):
+    """Endpoint to get weather information as a special skill"""
+    try:
+        body = await request.json()
+        location = body.get("location")
+        if not location:
+            raise HTTPException(status_code=400, detail="Location parameter is required")
+        
+        results = get_weather(location)
+        if results is None:
+            raise HTTPException(status_code=500, detail="Weather service is unavailable")
+
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Agent skill weather error: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent skill weather failed: {str(e)}")

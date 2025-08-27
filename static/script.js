@@ -1,86 +1,28 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Session management
-    function getOrCreateSessionId() {
-        const params = new URLSearchParams(window.location.search);
-        let sessionId = params.get('session');
-        if (!sessionId) {
-            sessionId = Date.now().toString();
-            params.set('session', sessionId);
-            window.history.replaceState({}, '', `${location.pathname}?${params}`);
-        }
-        return sessionId;
-    }
-
-    const sessionId = getOrCreateSessionId();
-
-    // State variables
-    let isRecording = false;
-    let mediaRecorder;
-    let audioChunks = [];
-    let audioContext = null;
-    let scriptProcessor = null;
-    let usingPcmStream = false;
-    let websocket = null;
-    let isStreaming = false;
-    let streamInterval = null; // For streaming audio data
-    let audioStream = null; // MediaStream for continuous access
-
-    // DOM elements
     const recordBtn = document.getElementById('record-btn');
-    const recordText = document.getElementById('record-text');
     const clearBtn = document.getElementById('clear-btn');
-    const echoAudio = document.getElementById('echo-audio');
+    const checkFilesBtn = document.getElementById('check-files-btn');
+    const setPersonaBtn = document.getElementById('set-persona-btn');
+    const personaSelect = document.getElementById('persona-select');
     const statusText = document.getElementById('status-text');
     const chatHistory = document.getElementById('chat-history');
     const streamingResponse = document.getElementById('streaming-response');
     const responseText = document.getElementById('response-text');
+    const echoAudio = document.getElementById('echo-audio');
     const wsStatus = document.getElementById('ws-status');
 
-    // Initialize
-    initializeWebSocket();
-    loadConversationHistory();
+    let websocket;
+    let mediaRecorder;
+    let audioChunks = [];
+    let sessionId = localStorage.getItem('sessionId') || `session_${Date.now()}`;
+    localStorage.setItem('sessionId', sessionId);
 
-    // Event listeners
-    recordBtn.addEventListener('click', () => {
-        if (isRecording) stopRecording();
-        else startRecording();
-    });
+    console.log(`Session ID: ${sessionId}`);
 
-    clearBtn.addEventListener('click', clearConversation);
-
-    // Add event listener for check files button
-    const checkFilesBtn = document.getElementById('check-files-btn');
-    checkFilesBtn.addEventListener('click', checkRecordedFiles);
-
-    // Auto-start recording after AI finishes reply
-    echoAudio.onended = () => {
-        if (!isStreaming) {
-            startRecording();
-        }
-    };
-
-    // Handle audio playback errors
-    echoAudio.onerror = () => {
-        console.error('Audio playback error');
-        updateStatus("Audio playback failed. Please try again.", 'error');
-        if (!isStreaming) {
-            startRecording();
-        }
-    };
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && e.target === document.body) {
-            e.preventDefault();
-            if (isRecording) stopRecording();
-            else startRecording();
-        }
-    });
-
-    // WebSocket initialization
     function initializeWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
+        console.log(`WebSocket URL: ${wsUrl}`);
 
         try {
             websocket = new WebSocket(wsUrl);
@@ -97,8 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('WebSocket disconnected');
                 wsStatus.textContent = '🔴 WebSocket: Disconnected';
                 wsStatus.className = 'ws-status';
-                // Try to reconnect after 5 seconds
-                setTimeout(initializeWebSocket, 5000);
+                setTimeout(initializeWebSocket, 5000); // Try to reconnect
             };
 
             websocket.onerror = (error) => {
@@ -112,509 +53,151 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Handle WebSocket messages
     function handleWebSocketMessage(event) {
-        try {
-            const data = JSON.parse(event.data);
-            console.log('WebSocket message:', data);
+        const message = JSON.parse(event.data);
+        console.log('Received message:', message);
 
-            switch (data.type) {
-                case 'ready':
-                    updateStatus("Connected and ready to stream audio", 'success');
-                    break;
-
-                case 'audio_received':
-                    // Audio chunk was successfully received and saved
-                    console.log(`Server received audio: ${data.bytes_received} bytes, total: ${data.total_file_size} bytes`);
-                    break;
-
-                case 'transcript':
-                    if (data.final) {
-                        addMessageToHistory('user', data.content);
-                    } else {
-                        // Optionally show partial in status only
-                        updateStatus(`You: ${data.content}`, 'info');
-                    }
-                    break;
-
-                case 'turn_end':
-                    // User has finished speaking - turn detection triggered
-                    updateStatus("🎤 Turn detected - you finished speaking!", 'success');
-                    console.log(`Turn ended with transcript: ${data.transcript}`);
-                    
-                    // Add a visual indicator that turn was detected
-                    const turnIndicator = document.createElement('div');
-                    turnIndicator.className = 'turn-indicator';
-                    turnIndicator.textContent = '🔄 Turn detected - processing...';
-                    turnIndicator.style.cssText = `
-                        background: #27AE60;
-                        color: white;
-                        padding: 8px 12px;
-                        border-radius: 4px;
-                        margin: 5px 0;
-                        font-size: 14px;
-                        text-align: center;
-                        animation: pulse 1s ease-in-out;
-                    `;
-                    
-                    // Add CSS animation for pulse effect
-                    if (!document.querySelector('#turn-indicator-style')) {
-                        const style = document.createElement('style');
-                        style.id = 'turn-indicator-style';
-                        style.textContent = `
-                            @keyframes pulse {
-                                0% { opacity: 0.7; transform: scale(0.95); }
-                                50% { opacity: 1; transform: scale(1.05); }
-                                100% { opacity: 0.7; transform: scale(0.95); }
-                            }
-                        `;
-                        document.head.appendChild(style);
-                    }
-                    
-                    chatHistory.appendChild(turnIndicator);
-                    
-                    // Remove the indicator after 3 seconds
-                    setTimeout(() => {
-                        if (turnIndicator.parentNode) {
-                            turnIndicator.remove();
-                        }
-                    }, 3000);
-                    break;
-
-                case 'llm_chunk':
-                    if (!isStreaming) {
-                        startStreamingResponse();
-                    }
-                    appendToResponse(data.content);
-                    break;
-
-                case 'audio_ready':
-                    completeStreamingResponse(data.audio_url);
-                    break;
-
-                case 'complete':
-                    isStreaming = false;
-                    break;
-
-                case 'error':
-                    updateStatus(data.message, 'error');
-                    if (isStreaming) {
-                        isStreaming = false;
-                        streamingResponse.style.display = 'none';
-                    }
-                    break;
-            }
-        } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+        switch (message.type) {
+            case 'ready':
+                statusText.textContent = 'Ready to stream audio.';
+                break;
+            case 'transcript':
+                updateTranscript(message.content, message.final);
+                break;
+            case 'turn_end':
+                streamingResponse.style.display = 'block';
+                responseText.textContent = '';
+                break;
+            case 'llm_chunk':
+                responseText.textContent += message.content;
+                break;
+            case 'audio_ready':
+                streamingResponse.style.display = 'none';
+                playAudio(message.audio_url);
+                break;
+            case 'complete':
+                streamingResponse.style.display = 'none';
+                break;
+            case 'error':
+                statusText.textContent = `Error: ${message.message}`;
+                streamingResponse.style.display = 'none';
+                break;
+            default:
+                console.warn('Unknown message type:', message.type);
         }
     }
 
-    // Recording functions
+    function updateTranscript(transcript, isFinal) {
+        let transcriptContainer = document.getElementById('transcript-container');
+        if (!transcriptContainer) {
+            transcriptContainer = document.createElement('div');
+            transcriptContainer.id = 'transcript-container';
+            transcriptContainer.className = 'chat-message user';
+            chatHistory.appendChild(transcriptContainer);
+        }
+        transcriptContainer.textContent = transcript;
+        if (isFinal) {
+            transcriptContainer.id = ''; // Reset id
+        }
+    }
+
+    function playAudio(url) {
+        echoAudio.src = url;
+        echoAudio.play().catch(e => console.error('Audio playback failed:', e));
+    }
+
     async function startRecording() {
-        if (isStreaming) return;
-
-        audioChunks = [];
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
-            audioStream = stream;
-
-            // Use WebAudio to capture PCM 16-bit mono @ 16kHz
-            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-            const source = audioContext.createMediaStreamSource(stream);
-            // ScriptProcessor is deprecated but widely supported; AudioWorklet is better if available
-            // 4096 samples @ 16kHz ≈ 256ms per chunk (within AAI's recommended 100–450ms)
-            const bufferSize = 4096;
-            scriptProcessor = audioContext.createScriptProcessor(bufferSize, 1, 1);
-
-            scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-                if (!isRecording || !websocket || websocket.readyState !== WebSocket.OPEN) return;
-                const inputBuffer = audioProcessingEvent.inputBuffer;
-                const inputData = inputBuffer.getChannelData(0);
-                const desiredRate = 16000;
-                const actualRate = audioContext.sampleRate || desiredRate;
-                const monoFloat = (actualRate === desiredRate)
-                    ? inputData
-                    : downsampleBuffer(inputData, actualRate, desiredRate);
-                const pcm16Buffer = floatTo16BitPCM(monoFloat);
-                websocket.send(pcm16Buffer);
-                usingPcmStream = true;
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                    if (websocket && websocket.readyState === WebSocket.OPEN) {
+                        websocket.send(event.data);
+                    }
+                }
             };
-
-            source.connect(scriptProcessor);
-            scriptProcessor.connect(audioContext.destination);
-
-            // Keep MediaRecorder for fallback HTTP upload of a complete file if needed
-            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-            mediaRecorder.ondataavailable = event => { if (event.data.size > 0) audioChunks.push(event.data); };
             mediaRecorder.onstop = () => {
-                if (streamInterval) { clearInterval(streamInterval); streamInterval = null; }
-                if (audioChunks.length > 0) { sendFinalAudioChunk(); }
-                if (audioStream) { audioStream.getTracks().forEach(track => track.stop()); audioStream = null; }
-                if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
-                if (audioContext) { audioContext.close(); audioContext = null; }
+                // The audio is sent in chunks, no need to send a blob at the end
             };
-            mediaRecorder.start();
-
-            isRecording = true;
-            recordText.textContent = "Stop Recording";
-            recordBtn.classList.add("recording");
-            updateStatus("Listening and streaming (16k PCM)...", 'listening');
-        } catch (err) {
-            console.error('Microphone access error:', err);
-            updateStatus("Microphone access denied or unavailable.", 'error');
-            alert("Microphone access denied or unavailable. Please enable microphone permissions and refresh the page.");
+            audioChunks = [];
+            mediaRecorder.start(1000); // Send data every 1000ms
+            recordBtn.textContent = 'Stop Recording';
+            statusText.textContent = 'Recording...';
+        } catch (error) {
+            console.error('Error starting recording:', error);
+            statusText.textContent = 'Could not start recording. Please allow microphone access.';
         }
     }
 
     function stopRecording() {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
+            recordBtn.textContent = 'Start Recording';
+            statusText.textContent = 'Recording stopped.';
         }
-
-        if (streamInterval) { clearInterval(streamInterval); streamInterval = null; }
-        if (audioStream) { audioStream.getTracks().forEach(track => track.stop()); audioStream = null; }
-        if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
-        if (audioContext) { audioContext.close(); audioContext = null; }
-
-        isRecording = false;
-        recordText.textContent = "Start Recording";
-        recordBtn.classList.remove("recording");
-        updateStatus("Processing your voice...", 'processing');
     }
 
-    // Send audio via WebSocket
-    function sendAudioToWebSocket() {
-        if (audioChunks.length === 0) {
-            updateStatus("No audio recorded. Please try again.", 'error');
-            console.error("No audio chunks recorded");
-            return;
-        }
-
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            websocket.send(audioBlob);
-            console.log(`Audio sent via WebSocket: ${audioBlob.size} bytes`);
+    recordBtn.addEventListener('click', () => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            stopRecording();
         } else {
-            // Fallback to HTTP endpoint if WebSocket is not available
-            sendAudioViaHTTP();
+            startRecording();
         }
-    }
+    });
 
-    // Stream audio chunk to server
-    function streamAudioChunk() { /* no-op: using WebAudio PCM stream in real time */ }
-
-    // Send final audio chunk when recording stops
-    function sendFinalAudioChunk() {
-        if (audioChunks.length === 0) {
-            return;
+    clearBtn.addEventListener('click', async () => {
+        try {
+            await fetch(`/conversation/${sessionId}`, { method: 'DELETE' });
+            chatHistory.innerHTML = '<div class="welcome-message"><p>Conversation cleared.</p></div>';
+            statusText.textContent = 'Conversation cleared.';
+        } catch (error) {
+            console.error('Error clearing conversation:', error);
+            statusText.textContent = 'Failed to clear conversation.';
         }
+    });
 
-        // Do NOT send containerized webm to realtime PCM socket
-        // Keep it for HTTP fallback upload only
-        audioChunks = []; // Clear chunks
-    }
-
-    // Fallback HTTP method
-    function sendAudioViaHTTP() {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const formData = new FormData();
-        formData.append('file', audioBlob, 'recording.webm');
-
-        fetch(`/agent/chat/${sessionId}/stream`, {
-            method: 'POST',
-            body: formData
-        })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.body.getReader();
-            })
-            .then(reader => {
-                return new ReadableStream({
-                    start(controller) {
-                        return pump();
-                        function pump() {
-                            return reader.read().then(({ done, value }) => {
-                                if (done) {
-                                    controller.close();
-                                    return;
-                                }
-                                controller.enqueue(value);
-                                return pump();
-                            });
-                        }
-                    }
-                });
-            })
-            .then(stream => new Response(stream))
-            .then(response => response.text())
-            .then(text => {
-                const lines = text.trim().split('\n');
-                lines.forEach(line => {
-                    if (line.trim()) {
-                        try {
-                            const data = JSON.parse(line);
-                            handleStreamingResponse(data);
-                        } catch (e) {
-                            console.error('Error parsing streaming response:', e);
-                        }
-                    }
-                });
-            })
-            .catch(error => {
-                console.error('HTTP streaming error:', error);
-                updateStatus("Connection error. Please try again.", 'error');
-            });
-    }
-
-    // Helpers
-    function floatTo16BitPCM(float32Array) {
-        const buffer = new ArrayBuffer(float32Array.length * 2);
-        const view = new DataView(buffer);
-        let offset = 0;
-        for (let i = 0; i < float32Array.length; i++, offset += 2) {
-            let s = Math.max(-1, Math.min(1, float32Array[i]));
-            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        }
-        return buffer; // Return raw ArrayBuffer for WebSocket binary frame
-    }
-
-    function downsampleBuffer(buffer, sampleRate, outSampleRate) {
-        if (outSampleRate === sampleRate) {
-            return buffer;
-        }
-        const sampleRateRatio = sampleRate / outSampleRate;
-        const newLength = Math.round(buffer.length / sampleRateRatio);
-        const result = new Float32Array(newLength);
-        let offsetResult = 0;
-        let offsetBuffer = 0;
-        while (offsetResult < result.length) {
-            const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
-            // Simple average to reduce aliasing
-            let accum = 0, count = 0;
-            for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-                accum += buffer[i];
-                count++;
-            }
-            result[offsetResult] = accum / (count || 1);
-            offsetResult++;
-            offsetBuffer = nextOffsetBuffer;
-        }
-        return result;
-    }
-
-    // Handle streaming responses
-    function handleStreamingResponse(data) {
-        switch (data.type) {
-            case 'llm_chunk':
-                if (!isStreaming) {
-                    startStreamingResponse();
-                }
-                appendToResponse(data.content);
-                break;
-
-            case 'audio_ready':
-                completeStreamingResponse(data.audio_url);
-                break;
-
-            case 'complete':
-                isStreaming = false;
-                break;
-
-            case 'error':
-                updateStatus(data.message, 'error');
-                if (isStreaming) {
-                    isStreaming = false;
-                    streamingResponse.style.display = 'none';
-                }
-                break;
-        }
-    }
-
-    // Streaming response management
-    function startStreamingResponse() {
-        isStreaming = true;
-        streamingResponse.style.display = 'block';
-        responseText.textContent = '';
-        updateStatus("AI is responding...", 'responding');
-    }
-
-    function appendToResponse(text) {
-        responseText.textContent += text;
-        // Auto-scroll to bottom
-        streamingResponse.scrollTop = streamingResponse.scrollHeight;
-    }
-
-    function completeStreamingResponse(audioUrl) {
-        if (audioUrl) {
-            echoAudio.src = audioUrl;
-            echoAudio.play().catch(err => {
-                console.error('Audio play error:', err);
-                updateStatus("Audio playback failed. Please try again.", 'error');
-            });
-        }
-
-        // Add AI response to chat history
-        const aiResponse = responseText.textContent;
-        if (aiResponse.trim()) {
-            addMessageToHistory('ai', aiResponse);
-        }
-
-        // Hide streaming response
-        setTimeout(() => {
-            streamingResponse.style.display = 'none';
-            responseText.textContent = '';
-        }, 1000);
-    }
-
-    // Chat history management
-    function addMessageToHistory(role, content) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `chat-message ${role}`;
-
-        const roleSpan = document.createElement('div');
-        roleSpan.className = 'role';
-
-        // Set role text based on message type
-        switch (role) {
-            case 'user':
-                roleSpan.textContent = 'You';
-                break;
-            case 'ai':
-                roleSpan.textContent = 'AI Assistant';
-                break;
-            case 'system':
-                roleSpan.textContent = 'System Info';
-                break;
-            default:
-                roleSpan.textContent = role;
-        }
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'content';
-        contentDiv.textContent = content;
-
-        messageDiv.appendChild(roleSpan);
-        messageDiv.appendChild(contentDiv);
-
-        // Remove welcome message if it exists
-        const welcomeMessage = chatHistory.querySelector('.welcome-message');
-        if (welcomeMessage) {
-            welcomeMessage.remove();
-        }
-
-        chatHistory.appendChild(messageDiv);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-
-        // Save to session storage
-        saveConversationToStorage();
-    }
-
-    function loadConversationHistory() {
-        const saved = sessionStorage.getItem(`conversation_${sessionId}`);
-        if (saved) {
-            try {
-                const history = JSON.parse(saved);
-                history.forEach(msg => {
-                    if (msg.role === 'system' || msg.role === 'user' || msg.role === 'ai') {
-                        addMessageToHistory(msg.role, msg.content);
-                    }
-                });
-            } catch (e) {
-                console.error('Error loading conversation history:', e);
-            }
-        }
-    }
-
-    function saveConversationToStorage() {
-        const messages = Array.from(chatHistory.querySelectorAll('.chat-message')).map(msg => {
-            let role = 'ai';
-            if (msg.classList.contains('user')) {
-                role = 'user';
-            } else if (msg.classList.contains('system')) {
-                role = 'system';
-            }
-            return {
-                role: role,
-                content: msg.querySelector('.content').textContent
-            };
-        });
-        sessionStorage.setItem(`conversation_${sessionId}`, JSON.stringify(messages));
-    }
-
-    function clearConversation() {
-        if (confirm('Are you sure you want to clear the conversation?')) {
-            chatHistory.innerHTML = `
-                <div class="welcome-message">
-                    <p>👋 Welcome! Click the microphone to start streaming audio to the server.</p>
-                    <p>Your audio will be recorded and saved in real-time via WebSocket connection.</p>
-                </div>
-            `;
-            sessionStorage.removeItem(`conversation_${sessionId}`);
-            updateStatus("Conversation cleared. Ready to start fresh!", 'info');
-        }
-    }
-
-    // Status updates
-    function updateStatus(message, type = 'info') {
-        statusText.textContent = message;
-        statusText.className = 'status-text';
-
-        // Add type-specific styling
-        switch (type) {
-            case 'error':
-                statusText.style.color = '#E74C3C';
-                break;
-            case 'success':
-                statusText.style.color = '#27AE60';
-                break;
-            case 'listening':
-                statusText.style.color = '#3498db';
-                break;
-            case 'processing':
-                statusText.style.color = '#f39c12';
-                break;
-            case 'responding':
-                statusText.style.color = '#9c27b0';
-                break;
-            default:
-                statusText.style.color = '#333';
-        }
-    }
-
-    // Initialize status
-    updateStatus("Click the microphone to start streaming audio", 'info');
-
-    // Check recorded audio files
-    async function checkRecordedFiles() {
+    checkFilesBtn.addEventListener('click', async () => {
         try {
             const response = await fetch(`/recorded-audio/${sessionId}`);
             const data = await response.json();
-
-            if (data.error) {
-                updateStatus(`Error checking files: ${data.error}`, 'error');
-                return;
+            let fileList = 'No files found.';
+            if (data.files && data.files.length > 0) {
+                fileList = data.files.map(f => `${f.filename} (${f.size_mb} MB)`).join('\n');
             }
-
-            if (data.files.length === 0) {
-                updateStatus("No audio files recorded yet. Start recording to create files.", 'info');
-                return;
-            }
-
-            // Display file information
-            let fileInfo = `📁 Recorded Audio Files (${data.total_files}):\n`;
-            data.files.forEach(file => {
-                fileInfo += `• ${file.filename} - ${file.size_mb} MB\n`;
-            });
-
-            // Add to chat history
-            addMessageToHistory('system', fileInfo);
-            updateStatus(`Found ${data.total_files} audio file(s)`, 'success');
-
+            alert(`Recorded files for session ${sessionId}:\n${fileList}`);
         } catch (error) {
-            console.error('Error checking recorded files:', error);
-            updateStatus("Error checking recorded files", 'error');
+            console.error('Error checking files:', error);
+            alert('Failed to check files.');
+        }
+    });
+
+    setPersonaBtn.addEventListener('click', async () => {
+        const selectedPersona = personaSelect.value;
+        try {
+            const response = await fetch(`/persona/${sessionId}/${selectedPersona}`, { method: 'POST' });
+            const data = await response.json();
+            statusText.textContent = data.message;
+        } catch (error) {
+            console.error('Error setting persona:', error);
+            statusText.textContent = 'Failed to set persona.';
+        }
+    });
+
+    async function getCurrentPersona() {
+        try {
+            const response = await fetch(`/persona/${sessionId}`);
+            const data = await response.json();
+            if (data.persona) {
+                personaSelect.value = data.persona;
+            }
+        } catch (error) {
+            console.error('Error getting current persona:', error);
         }
     }
+
+    // Initializations
+    initializeWebSocket();
+    getCurrentPersona();
 });

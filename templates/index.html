@@ -10,6 +10,20 @@
     <h1>🎤 AI Voice Agent</h1>
     <p class="subtitle">Streaming Audio Recording with WebSockets</p>
     
+    <!-- Persona Selection -->
+    <div class="persona-controls">
+      <label for="persona-select">Choose Persona:</label>
+      <select id="persona-select" class="persona-select">
+        <option value="default">🤖 Default AI</option>
+        <option value="pirate">🏴‍☠️ Pirate</option>
+        <option value="robot">🤖 Robot</option>
+        <option value="cowboy">🤠 Cowboy</option>
+      </select>
+      <button id="set-persona-btn" class="set-persona-button" title="Set Persona">
+        ✅ Set Persona
+      </button>
+    </div>
+
     <!-- Conversation History -->
     <div id="chat-history" class="chat-history">
       <div class="welcome-message">
@@ -36,7 +50,7 @@
 
     <!-- Status and Streaming Indicators -->
     <div id="status-text" class="status-text"></div>
-    
+
     <!-- Streaming Response Display -->
     <div id="streaming-response" class="streaming-response" style="display: none;">
       <div class="streaming-indicator">
