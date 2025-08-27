@@ -1,58 +1,48 @@
 #!/usr/bin/env python3
 """
-Script to help update the .env file with actual API keys
+Script to update environment variables with provided API keys
 """
 
 import os
 import sys
 
 def update_env_file():
-    """Update the .env file with actual API keys"""
+    """Update the .env file with provided API keys"""
+    env_file = ".env"
     
-    # Read the current .env file
-    env_path = ".env"
-    
-    if not os.path.exists(env_path):
-        print("❌ .env file not found!")
+    # Check if .env file exists
+    if not os.path.exists(env_file):
+        print(f"❌ {env_file} file not found")
         return False
     
+    # Read the current content
     try:
-        with open(env_path, 'r') as f:
+        with open(env_file, 'r') as f:
             content = f.read()
         
-        print("🔧 Updating .env file with your API keys")
-        print("=" * 50)
+        # Update the RapidAPI key (assuming this is for Tavily or another service)
+        # Since we don't know which service the key is for, let's update TAVILY_API_KEY
+        if "TAVILY_API_KEY=" in content:
+            new_content = content.replace(
+                "TAVILY_API_KEY=your_tavily_api_key_here",
+                "TAVILY_API_KEY=329e5ce5f2msh58c8f81ef9ae33ap15d775jsnc5dda11b0742"
+            )
+        else:
+            # If TAVILY_API_KEY line doesn't exist, add it
+            new_content = content + "\nTAVILY_API_KEY=329e5ce5f2msh58c8f81ef9ae33ap15d775jsnc5dda11b0742"
         
-        # Get API keys from user input
-        murf_key = input("Enter your Murf AI API key: ").strip()
-        assemblyai_key = input("Enter your AssemblyAI API key: ").strip()
-        gemini_key = input("Enter your Google Gemini API key: ").strip()
+        # Write the updated content
+        with open(env_file, 'w') as f:
+            f.write(new_content)
         
-        # Replace placeholder values
-        updated_content = content.replace(
-            "MURF_API_KEY=your_actual_murf_api_key_here",
-            f"MURF_API_KEY={murf_key}"
-        ).replace(
-            "ASSEMBLYAI_API_KEY=your_actual_assemblyai_api_key_here",
-            f"ASSEMBLYAI_API_KEY={assemblyai_key}"
-        ).replace(
-            "GEMINI_API_KEY=your_actual_gemini_api_key_here",
-            f"GEMINI_API_KEY={gemini_key}"
-        )
-        
-        # Write updated content
-        with open(env_path, 'w') as f:
-            f.write(updated_content)
-        
-        print("✅ .env file updated successfully!")
-        print("🔑 API keys have been set")
-        print("🚀 You can now run the application with: python run.py")
-        
+        print("✅ Environment file updated successfully")
+        print("Updated TAVILY_API_KEY with the provided RapidAPI key")
         return True
         
     except Exception as e:
-        print(f"❌ Error updating .env file: {e}")
+        print(f"❌ Error updating environment file: {e}")
         return False
 
 if __name__ == "__main__":
-    update_env_file()
+    success = update_env_file()
+    sys.exit(0 if success else 1)

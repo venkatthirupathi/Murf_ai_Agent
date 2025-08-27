@@ -847,3 +847,18 @@ async def agent_skill_weather(request: Request):
     except Exception as e:
         logger.error(f"Agent skill weather error: {e}")
         raise HTTPException(status_code=500, detail=f"Agent skill weather failed: {str(e)}")
+
+# NEW: Joke generator endpoint
+@app.post("/agent/skill/joke")
+async def agent_skill_joke(request: Request):
+    """Endpoint to get a random joke as a special skill"""
+    try:
+        response = requests.get("https://official-joke-api.appspot.com/random_joke")
+        if response.status_code != 200:
+            raise HTTPException(status_code=500, detail="Joke service is unavailable")
+        
+        joke = response.json()
+        return {"setup": joke["setup"], "punchline": joke["punchline"]}
+    except Exception as e:
+        logger.error(f"Agent skill joke error: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent skill joke failed: {str(e)}")

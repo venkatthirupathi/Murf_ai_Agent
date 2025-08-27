@@ -1,4 +1,5 @@
-# Web Search Special Skill Implementation Plan
+ 
+ # Web Search Special Skill Implementation Plan
 
 ## Phase 1: Setup and Configuration
 - [x] Add Tavily API dependency to requirements.txt
