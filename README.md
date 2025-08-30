@@ -20,6 +20,19 @@ A full-stack conversational AI voice agent built as part of the #30DaysofVoiceAg
 
 ---
 
+## 🆕 New Features Added (Day 29)
+
+- **Real-time AI responses with WebSocket support** for instant, low-latency interaction
+- **HTTP streaming fallback** to ensure reliable communication if WebSocket fails
+- **Enhanced conversation UI** with persistent chat history saved per session
+- **Improved error handling** with graceful fallbacks for all scenarios, including API key issues and audio errors
+- **Keyboard shortcuts** for better accessibility and user experience
+- **Audio recording and playback improvements** for seamless voice interaction
+- **Session management** with unique session IDs for personalized conversations
+- **Detailed logging and monitoring** for easier debugging and maintenance
+
+---
+
 ## 📸 Screenshots
 
 Task day 12 completed UI:
@@ -119,47 +132,9 @@ Then open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ---
 
-## 📁 Project Structure
-
-```
-Murf_ai/
-├── app.py              # Main FastAPI application with streaming endpoints
-├── run.py              # Startup script
-├── requirements.txt    # Python dependencies (updated for streaming)
-├── schemas/           # Pydantic data models (includes streaming)
-├── services/          # API service integrations (LLM with streaming)
-├── static/            # Frontend assets (CSS, JS with WebSocket support)
-├── templates/         # HTML templates (enhanced UI)
-├── STREAMING_SETUP.md # Detailed streaming setup guide
-└── SETUP.md           # Original setup instructions
-```
-
----
-
-## 🆕 What's New Today
-
-### **Streaming Task Implementation**
-- ✅ **Real-time AI responses** - See responses as they're generated
-- ✅ **WebSocket endpoints** - Instant bidirectional communication
-- ✅ **HTTP streaming fallback** - Reliable fallback when WebSocket fails
-- ✅ **Enhanced conversation UI** - Modern design with chat history
-- ✅ **Persistent sessions** - Chat history saved per session
-- ✅ **Better error handling** - Graceful fallbacks for all scenarios
-
-### **Previous Days Features Preserved**
-- ✅ **Voice-first interface** - Single button recording
-- ✅ **Speech-to-text** - AssemblyAI integration
-- ✅ **LLM responses** - Google Gemini integration
-- ✅ **Text-to-speech** - Murf AI integration
-- ✅ **Error handling** - Fallback mechanisms
-- ✅ **Keyboard shortcuts** - Spacebar recording control
-
----
-
 ## ✨ Credits
 
 - Built as part of the #30DaysofVoiceAgents by THIRUPATHI VENKAT
-- **Today's Task**: Real-time streaming AI conversations with WebSocket support
 - Thanks to [Murf AI](https://murf.ai), [AssemblyAI](https://assemblyai.com), and [Google Gemini](https://deepmind.google/technologies/gemini/) for their APIs and inspiration
 
 #BuildwithMurf #30DaysofVoiceAgents #AI #VoiceBot #FastAPI #MurfAI #Streaming #WebSocket
