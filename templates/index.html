@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>AI Voice Agent - Streaming</title>
+  <title>AI Voice Agent - Day 24: Agent Persona</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="container">
     <h1>🎤 AI Voice Agent</h1>
-    <p class="subtitle">Streaming Audio Recording with WebSockets</p>
+    <p class="subtitle">AI - VOICE AGENT</p>
     
     <!-- Persona Selection -->
     <div class="persona-controls">
@@ -27,8 +27,8 @@
     <!-- Conversation History -->
     <div id="chat-history" class="chat-history">
       <div class="welcome-message">
-        <p>👋 Welcome! Click the microphone to start streaming audio to the server.</p>
-        <p>Your audio will be recorded and saved in real-time via WebSocket connection.</p>
+        <p>👋 Welcome! Click the microphone to start talking with the AI.</p>
+        <p>Choose a persona above and start a conversation!</p>
       </div>
     </div>
 
@@ -62,12 +62,15 @@
     <!-- Hidden audio player (auto‑plays responses) -->
     <audio id="echo-audio" style="display:none;"></audio>
     
-    <!-- Connection Status -->
-    <div id="connection-status" class="connection-status">
-      <span id="ws-status" class="ws-status">🔴 WebSocket: Disconnected</span>
-    </div>
+
   </div>
 
-  <script src="/static/script.js"></script>
+  <div class="murf-branding">
+    <a href="https://murf.ai/api/docs/introduction/overview" target="_blank" rel="noopener noreferrer">
+      Powered by Murf
+    </a>
+  </div>
+
+  <script src="/static/script_day24.js"></script>
 </body>
 </html>

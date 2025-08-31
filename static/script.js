@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // The audio is sent in chunks, no need to send a blob at the end
             };
             audioChunks = [];
-            mediaRecorder.start(1000); // Send data every 1000ms
+            mediaRecorder.start(500); // Send data every 500ms to stay within AssemblyAI limits
             recordBtn.textContent = 'Stop Recording';
             statusText.textContent = 'Recording...';
         } catch (error) {

@@ -29,7 +29,7 @@ def main():
     print("Press Ctrl+C to stop the server")
     
     uvicorn.run(
-        "app:app",
+        "app_day24:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
