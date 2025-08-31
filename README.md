@@ -33,14 +33,8 @@ A full-stack conversational AI voice agent built as part of the #30DaysofVoiceAg
 
 ---
 
-## 📸 Screenshots
 
-Task day 12 completed UI:
-<img src="task_day_12.png" width="350">
 
-**NEW: Today's Streaming Task** - Real-time AI responses with WebSocket support!
-
----
 
 ## 🔧 Tech Stack
 
